@@ -1,0 +1,1159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>Flashcard Applet</title>
+  
+  <!-- SheetJS for Excel (.xlsx / .xls) -->
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+
+  <!-- JSZip for ZIP Extraction -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+  <!-- KaTeX for Math Rendering -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/contrib/auto-render.min.js" onload="initApp()"></script>
+
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    
+    html, body {
+      width: 100%;
+      height: 100vh;
+      height: 100dvh;
+      background-color: #f1f5f9;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    /* TOP COMPACT HEADER */
+    header {
+      padding: 6px 12px;
+      background-color: #ffffff;
+      border-bottom: 1px solid #e2e8f0;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+      z-index: 10;
+      flex-shrink: 0;
+    }
+
+    .instruction-bar {
+      text-align: center;
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: #475569;
+      background-color: #f8fafc;
+      padding: 3px 6px;
+      border-radius: 6px;
+      border: 1px dashed #cbd5e1;
+    }
+
+    .header-controls {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+    }
+
+    .compact-drop-zone {
+      flex: 1;
+      padding: 5px 10px;
+      border: 1.5px dashed #3b82f6;
+      border-radius: 8px;
+      background-color: #eff6ff;
+      text-align: center;
+      color: #1d4ed8;
+      font-size: 0.78rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      min-width: 200px;
+    }
+    .compact-drop-zone.dragover { background-color: #dbeafe; border-color: #1d4ed8; }
+
+    .header-right-tools {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* MULTI-SELECT TOPIC DROPDOWN */
+    .multi-select-dropdown {
+      position: relative;
+      display: inline-block;
+    }
+
+    .dropdown-btn {
+      padding: 5px 10px;
+      border-radius: 6px;
+      border: 1px solid #cbd5e1;
+      background-color: #ffffff;
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: #1e293b;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      outline: none;
+    }
+    .dropdown-btn:disabled {
+      background-color: #f1f5f9;
+      color: #94a3b8;
+      cursor: not-allowed;
+    }
+
+    .dropdown-menu {
+      display: none;
+      position: absolute;
+      top: 100%;
+      right: 0;
+      margin-top: 4px;
+      background-color: #ffffff;
+      min-width: 210px;
+      max-width: 280px;
+      max-height: 240px;
+      overflow-y: auto;
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      box-shadow: 0 8px 20px rgba(0,0,0,0.12);
+      z-index: 100;
+      padding: 6px 0;
+    }
+
+    .dropdown-menu.show { display: block; }
+
+    .dropdown-item {
+      padding: 5px 12px;
+      font-size: 0.78rem;
+      color: #334155;
+      display: flex;
+      align-items: center;
+    }
+    .dropdown-item label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+      cursor: pointer;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .dropdown-item:hover { background-color: #f8fafc; }
+    .dropdown-divider { height: 1px; background-color: #e2e8f0; margin: 4px 0; }
+    .checkbox-list { display: flex; flex-direction: column; }
+
+    /* FULLSCREEN BUTTON */
+    .fullscreen-btn {
+      padding: 5px 10px;
+      border-radius: 6px;
+      border: 1px solid #3b82f6;
+      background-color: #3b82f6;
+      color: #ffffff;
+      font-size: 0.78rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .fullscreen-btn:hover { background-color: #2563eb; }
+
+    input[type="file"] { display: none; }
+
+    /* MAIN WORKSPACE */
+    .workspace {
+      flex: 1;
+      display: flex;
+      gap: 10px;
+      padding: 8px 10px;
+      min-height: 0;
+    }
+
+    /* LEFT COLUMN: FLASHCARDS */
+    .left-col {
+      flex: 1;
+      max-width: 500px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      min-height: 0;
+    }
+
+    .status-bar {
+      display: flex;
+      justify-content: space-between;
+      color: #64748b;
+      font-size: 0.78rem;
+      font-weight: 700;
+      padding: 0 2px;
+      flex-shrink: 0;
+    }
+
+    /* CONTROLS ABOVE CARD */
+    .controls {
+      display: flex;
+      gap: 8px;
+      height: 40px;
+      flex-shrink: 0;
+    }
+
+    button.swipe-btn {
+      flex: 1; border: none; border-radius: 8px;
+      font-weight: bold; font-size: 0.85rem; cursor: pointer;
+      color: white; transition: transform 0.1s;
+    }
+    button.swipe-btn:active { transform: scale(0.98); }
+    .btn-again { background-color: #ef4444; }
+    .btn-know { background-color: #22c55e; }
+
+    .card-container {
+      flex: 1;
+      perspective: 1000px;
+      cursor: pointer;
+      position: relative;
+      min-height: 0;
+    }
+
+    .card {
+      width: 100%;
+      height: 100%;
+      position: absolute;
+      transform-style: preserve-3d;
+      transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.35s ease;
+      border-radius: 12px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+    }
+
+    .card.flipped { transform: rotateY(180deg) !important; }
+
+    .card-face {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      backface-visibility: hidden;
+      -webkit-backface-visibility: hidden;
+      border-radius: 12px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: flex-start;
+      padding: 42px 16px 16px 16px;
+      text-align: center;
+      border: 1px solid #e2e8f0;
+      overflow-y: auto;
+    }
+
+    .card-front {
+      background-color: #ffffff;
+      border-top: 5px solid #3b82f6;
+    }
+
+    .card-back {
+      transform: rotateY(180deg);
+      background-color: #f0fdf4;
+      border-top: 5px solid #22c55e;
+    }
+    
+    .badge-bar {
+      position: absolute; top: 8px; left: 12px; right: 12px;
+      display: flex; justify-content: space-between; align-items: center;
+      pointer-events: none;
+      z-index: 2;
+    }
+
+    .side-badge {
+      padding: 2px 7px; border-radius: 8px;
+      font-size: 0.68rem; font-weight: 800; letter-spacing: 0.5px;
+      text-transform: uppercase;
+    }
+
+    .badge-question { background-color: #dbeafe; color: #1e40af; }
+    .badge-answer { background-color: #dcfce7; color: #166534; }
+
+    .topic-badge {
+      background-color: #f1f5f9; color: #475569;
+      padding: 2px 7px; border-radius: 8px;
+      font-size: 0.68rem; font-weight: 700; text-transform: uppercase;
+      border: 1px solid #cbd5e1; max-width: 55%;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+
+    .card-content {
+      width: 100%;
+      margin: auto 0;
+      text-align: center;
+      line-height: 1.5;
+      word-wrap: break-word;
+      overflow-wrap: break-word;
+      white-space: normal;
+      font-size: clamp(1rem, 2.3vh, 1.5rem);
+      font-weight: 600;
+      color: #0f172a;
+      pointer-events: none;
+    }
+
+    .card-face img {
+      max-width: 100%;
+      max-height: clamp(140px, 38vh, 55%);
+      object-fit: contain;
+      margin: 8px auto;
+      border-radius: 8px;
+      display: block;
+    }
+
+    .card-content .katex {
+      font-size: 1.1em;
+    }
+
+    #completion-screen {
+      display: none; text-align: center; font-size: 0.95rem; color: #15803d;
+      margin: auto; padding: 20px; background: white; border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.05); width: 100%;
+    }
+
+    /* RIGHT COLUMN: STYLUS ANNOTATION CANVAS */
+    .right-col {
+      flex: 1.2;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      background: #ffffff;
+      border-radius: 12px;
+      border: 1px solid #cbd5e1;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.03);
+      overflow: hidden;
+      min-height: 0;
+    }
+
+    #drawingCanvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+      touch-action: none;
+      -webkit-touch-callout: none;
+      user-select: none;
+      -webkit-user-select: none;
+      cursor: crosshair;
+      background-color: #ffffff;
+    }
+
+    .canvas-toolbar {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      background: rgba(255, 255, 255, 0.92);
+      backdrop-filter: blur(4px);
+      padding: 4px;
+      border-radius: 8px;
+      border: 1px solid #cbd5e1;
+      display: flex;
+      gap: 4px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      z-index: 5;
+    }
+
+    .tool-btn {
+      padding: 5px 8px;
+      font-size: 0.72rem;
+      font-weight: 700;
+      border: 1px solid transparent;
+      border-radius: 6px;
+      background: transparent;
+      color: #334155;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .tool-btn.active {
+      background-color: #3b82f6;
+      color: white;
+    }
+
+    .tool-btn.clear-btn:hover { background-color: #fee2e2; color: #dc2626; }
+
+    @media (max-width: 768px) and (orientation: portrait) {
+      .workspace { flex-direction: column; }
+      .left-col { max-width: 100%; flex: 1.2; }
+      .right-col { flex: 0.8; min-height: 180px; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="instruction-bar">
+    💡 <strong>Instructions:</strong> Tap card to flip • Swipe left (Don't Know) / Swipe right (Know) • Use scratchpad on the right
+  </div>
+  <div class="header-controls">
+    <div class="compact-drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()">
+      <span>📥 Drop ZIP / Excel files here</span>
+      <button type="button" style="background:#3b82f6; color:#fff; border:none; padding:3px 7px; border-radius:4px; font-size:0.72rem; font-weight:700; cursor:pointer;">Select Files</button>
+    </div>
+    
+    <div class="header-right-tools">
+      <div class="multi-select-dropdown" id="topic-dropdown">
+        <button type="button" class="dropdown-btn" id="topic-dropdown-btn" onclick="toggleTopicMenu()" disabled>
+          <span id="topic-btn-text">Filter Topics (0)</span> ▾
+        </button>
+        <div class="dropdown-menu" id="topic-menu">
+          <div class="dropdown-item">
+            <label style="font-weight:700;">
+              <input type="checkbox" id="select-all-topics" onchange="toggleSelectAllTopics(this.checked)" checked>
+              <span>Select All</span>
+            </label>
+          </div>
+          <div class="dropdown-divider"></div>
+          <div id="topic-checkboxes-list" class="checkbox-list"></div>
+        </div>
+      </div>
+
+      <button type="button" class="fullscreen-btn" onclick="toggleFullscreen()">⛶ Fullscreen</button>
+    </div>
+  </div>
+
+  <input type="file" id="file-input" multiple accept=".xlsx,.xls,.zip,application/zip,application/x-zip-compressed,application/x-zip,application/octet-stream,image/*" onchange="handleFileSelect(event)">
+</header>
+
+<div class="workspace">
+  <div class="left-col">
+    <div class="status-bar">
+      <span id="files-text">Decks Loaded: 0</span>
+      <span id="status-text">Cards Remaining: 0</span>
+    </div>
+
+    <div class="controls" id="controls">
+      <button class="swipe-btn btn-again" onclick="handleSwipe(false)">← Don't Know</button>
+      <button class="swipe-btn btn-know" onclick="handleSwipe(true)">Know →</button>
+    </div>
+
+    <div class="card-container" id="card-container">
+      <div class="card" id="card">
+        <div class="card-face card-front">
+          <div class="badge-bar">
+            <span class="side-badge badge-question">QUESTION</span>
+            <span class="topic-badge" id="front-topic">Topic</span>
+          </div>
+          <div id="front-content" class="card-content">Load your flashcard decks to get started!</div>
+        </div>
+
+        <div class="card-face card-back">
+          <div class="badge-bar">
+            <span class="side-badge badge-answer">ANSWER</span>
+            <span class="topic-badge" id="back-topic">Topic</span>
+          </div>
+          <div id="back-content" class="card-content">---</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="completion-screen">
+      🎉 <strong>Session Complete!</strong><br>All cards in the selected topic(s) have been reviewed.
+    </div>
+  </div>
+
+  <div class="right-col">
+    <div class="canvas-toolbar">
+      <button class="tool-btn active" id="btn-pen" onclick="setTool('pen')">✏️ Pen</button>
+      <button class="tool-btn" id="btn-eraser" onclick="setTool('eraser')">🧹 Eraser</button>
+      <button class="tool-btn clear-btn" onclick="clearCanvas()">🗑️ Clear</button>
+    </div>
+    <canvas id="drawingCanvas"></canvas>
+  </div>
+</div>
+
+<script>
+  let masterDeck = [];
+  let deck = [];
+  let selectedTopics = new Set();
+  const card = document.getElementById('card');
+
+  let drawingCtx = null;
+  let isDrawing = false;
+  let currentTool = 'pen';
+  let lastPX = 0, lastPY = 0;
+
+  function initApp() {
+    setupDragAndDrop();
+    setupTouchEvents();
+    initCanvas();
+  }
+
+  function toggleFullscreen() {
+    if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+      const docEl = document.documentElement;
+      if (docEl.requestFullscreen) docEl.requestFullscreen();
+      else if (docEl.webkitRequestFullscreen) docEl.webkitRequestFullscreen();
+    } else {
+      if (document.exitFullscreen) document.exitFullscreen();
+      else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+    }
+  }
+
+  function toggleTopicMenu() {
+    const menu = document.getElementById('topic-menu');
+    menu.classList.toggle('show');
+  }
+
+  window.addEventListener('click', (e) => {
+    const dropdown = document.getElementById('topic-dropdown');
+    if (dropdown && !dropdown.contains(e.target)) {
+      document.getElementById('topic-menu').classList.remove('show');
+    }
+  });
+
+  function updateTopicDropdown() {
+    const topics = Array.from(new Set(masterDeck.map(c => c.topic))).sort();
+    const listContainer = document.getElementById('topic-checkboxes-list');
+    listContainer.innerHTML = '';
+
+    selectedTopics = new Set(topics);
+
+    topics.forEach(t => {
+      const count = masterDeck.filter(c => c.topic === t).length;
+      const item = document.createElement('div');
+      item.className = 'dropdown-item';
+      item.innerHTML = `
+        <label>
+          <input type="checkbox" value="${escapeHtml(t)}" checked onchange="handleTopicCheckboxChange()">
+          <span>${escapeHtml(t)} (${count})</span>
+        </label>
+      `;
+      listContainer.appendChild(item);
+    });
+
+    document.getElementById('select-all-topics').checked = true;
+    document.getElementById('topic-dropdown-btn').disabled = false;
+    updateTopicBtnText(topics.length, topics.length);
+  }
+
+  function escapeHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
+  function handleTopicCheckboxChange() {
+    const checkboxes = document.querySelectorAll('#topic-checkboxes-list input[type="checkbox"]');
+    selectedTopics.clear();
+    let allChecked = true;
+
+    checkboxes.forEach(cb => {
+      if (cb.checked) selectedTopics.add(cb.value);
+      else allChecked = false;
+    });
+
+    document.getElementById('select-all-topics').checked = allChecked;
+    applyTopicFilter();
+  }
+
+  function toggleSelectAllTopics(checked) {
+    const checkboxes = document.querySelectorAll('#topic-checkboxes-list input[type="checkbox"]');
+    checkboxes.forEach(cb => { cb.checked = checked; });
+
+    if (checked) {
+      const topics = Array.from(new Set(masterDeck.map(c => c.topic)));
+      selectedTopics = new Set(topics);
+    } else {
+      selectedTopics.clear();
+    }
+    applyTopicFilter();
+  }
+
+  function updateTopicBtnText(selectedCount, totalCount) {
+    const btnText = document.getElementById('topic-btn-text');
+    if (selectedCount === totalCount) {
+      btnText.innerText = `All Topics (${totalCount})`;
+    } else if (selectedCount === 0) {
+      btnText.innerText = `No Topics Selected (0)`;
+    } else {
+      btnText.innerText = `Topics (${selectedCount}/${totalCount})`;
+    }
+  }
+
+  function applyTopicFilter() {
+    const totalTopicsCount = new Set(masterDeck.map(c => c.topic)).size;
+    updateTopicBtnText(selectedTopics.size, totalTopicsCount);
+
+    deck = shuffleArray(masterDeck.filter(c => selectedTopics.has(c.topic)));
+
+    if (deck.length === 0) {
+      document.getElementById('card-container').style.display = 'none';
+      document.getElementById('controls').style.display = 'none';
+      document.getElementById('status-text').innerText = 'Cards Remaining: 0';
+      document.getElementById('completion-screen').style.display = 'block';
+      document.getElementById('completion-screen').innerHTML = selectedTopics.size === 0 ? 
+        '⚠️ <strong>No topics selected!</strong><br>Please check at least one topic in the filter above.' :
+        '🎉 <strong>Session Complete!</strong><br>All cards in the selected topic(s) have been reviewed.';
+    } else {
+      document.getElementById('card-container').style.display = 'block';
+      document.getElementById('controls').style.display = 'flex';
+      document.getElementById('completion-screen').style.display = 'none';
+      renderCard();
+    }
+  }
+
+  async function readFileAsArrayBuffer(file) {
+    if (file.arrayBuffer) return await file.arrayBuffer();
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => resolve(e.target.result);
+      reader.onerror = () => reject(new Error("Failed to read file"));
+      reader.readAsArrayBuffer(file);
+    });
+  }
+
+  function getMimeType(filename) {
+    const ext = filename.toLowerCase().split('.').pop();
+    const mimeMap = { 'png':'image/png', 'jpg':'image/jpeg', 'jpeg':'image/jpeg', 'gif':'image/gif', 'svg':'image/svg+xml', 'webp':'image/webp' };
+    return mimeMap[ext] || 'image/png';
+  }
+
+  function isZipBuffer(buffer, fileName, fileType) {
+    if (fileName && fileName.toLowerCase().endsWith('.zip')) return true;
+    if (fileType && (fileType.includes('zip') || fileType.includes('compressed'))) return true;
+    if (buffer && buffer.byteLength >= 4) {
+      const header = new Uint8Array(buffer, 0, 4);
+      return header[0] === 0x50 && header[1] === 0x4B && (header[2] === 0x03 || header[2] === 0x05 || header[2] === 0x07);
+    }
+    return false;
+  }
+
+  function setupDragAndDrop() {
+    const dropZone = document.getElementById('drop-zone');
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eName => {
+      dropZone.addEventListener(eName, (e) => { e.preventDefault(); e.stopPropagation(); }, false);
+    });
+    ['dragenter', 'dragover'].forEach(eName => dropZone.classList.add('dragover'));
+    ['dragleave', 'drop'].forEach(eName => dropZone.classList.remove('dragover'));
+
+    dropZone.addEventListener('drop', async (e) => {
+      if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+        await processFiles(Array.from(e.dataTransfer.files));
+      }
+    });
+  }
+
+  async function handleFileSelect(event) {
+    if (event.target.files.length > 0) {
+      await processFiles(Array.from(event.target.files));
+      event.target.value = '';
+    }
+  }
+
+  async function processFiles(files) {
+    if (typeof XLSX === 'undefined') {
+      alert("⚠️ SheetJS library for reading Excel files is not loaded.");
+      return;
+    }
+
+    const validFiles = files.filter(f => f && f.size > 0);
+    masterDeck = [];
+    let loadedDeckCount = 0;
+
+    const standaloneImageMap = {};
+    const standaloneExcels = [];
+
+    for (const file of validFiles) {
+      const cleanFileName = file.name.split('/').pop();
+      const lowerName = cleanFileName.toLowerCase();
+      if (cleanFileName.startsWith('.') || cleanFileName.startsWith('~$') || cleanFileName.includes('__MACOSX')) continue;
+
+      try {
+        const buffer = await readFileAsArrayBuffer(file);
+        const isZip = isZipBuffer(buffer, cleanFileName, file.type);
+
+        if (isZip) {
+          if (typeof JSZip === 'undefined') { alert("JSZip library failed to load."); return; }
+          const zip = await JSZip.loadAsync(buffer);
+          const zipFallbackTopic = cleanFileName.replace(/\.[^/.]+$/, "");
+
+          const zipImageMap = {};
+          const zipExcelEntries = [];
+
+          for (const relativePath in zip.files) {
+            if (relativePath.includes('__MACOSX')) continue;
+            const zipEntry = zip.files[relativePath];
+            if (zipEntry.dir) continue;
+
+            const cleanRelPath = relativePath.toLowerCase().replace(/\\/g, '/');
+            const baseName = relativePath.split('/').pop();
+            const baseNameLower = baseName.toLowerCase();
+            if (baseName.startsWith('.') || baseName.startsWith('~$')) continue;
+
+            if (/\.(png|jpe?g|gif|svg|webp)$/.test(baseNameLower)) {
+              const imgArrayBuffer = await zipEntry.async('arraybuffer');
+              const mime = getMimeType(baseNameLower);
+              const blob = new Blob([imgArrayBuffer], { type: mime });
+              const blobUrl = URL.createObjectURL(blob);
+
+              zipImageMap[cleanRelPath] = blobUrl;
+              if (!zipImageMap[baseNameLower]) zipImageMap[baseNameLower] = blobUrl;
+            } else if (baseNameLower.endsWith('.xlsx') || baseNameLower.endsWith('.xls')) {
+              zipExcelEntries.push({
+                relativePath: cleanRelPath,
+                baseName: baseName,
+                zipEntry: zipEntry
+              });
+            }
+          }
+
+          for (const excelItem of zipExcelEntries) {
+            const excelBuffer = await excelItem.zipEntry.async('arraybuffer');
+            let topicName = excelItem.baseName.replace(/\.[^/.]+$/, "");
+            if (["cards", "sheet1", "excel", "flashcards"].includes(topicName.toLowerCase())) {
+              topicName = zipFallbackTopic;
+            }
+
+            const pathParts = excelItem.relativePath.split('/');
+            pathParts.pop();
+            const parentFolder = pathParts.join('/');
+
+            const createResolver = (imgName) => {
+              const cleanImg = imgName.trim().toLowerCase().replace(/\\/g, '/');
+              const imgBaseName = cleanImg.split('/').pop();
+
+              if (parentFolder) {
+                const relPathKey = `${parentFolder}/${cleanImg}`;
+                if (zipImageMap[relPathKey]) return zipImageMap[relPathKey];
+
+                const relBaseKey = `${parentFolder}/${imgBaseName}`;
+                if (zipImageMap[relBaseKey]) return zipImageMap[relBaseKey];
+              }
+
+              if (zipImageMap[cleanImg]) return zipImageMap[cleanImg];
+
+              const topicKey = `${topicName.toLowerCase()}/${imgBaseName}`;
+              if (zipImageMap[topicKey]) return zipImageMap[topicKey];
+
+              if (zipImageMap[imgBaseName]) return zipImageMap[imgBaseName];
+
+              return null;
+            };
+
+            const cards = parseExcelBuffer(excelBuffer, topicName, createResolver);
+            masterDeck.push(...cards);
+            loadedDeckCount++;
+          }
+        } 
+        else if (/\.(png|jpe?g|gif|svg|webp)$/.test(lowerName)) {
+          const blob = new Blob([buffer], { type: getMimeType(lowerName) });
+          standaloneImageMap[lowerName] = URL.createObjectURL(blob);
+        } 
+        else if (lowerName.endsWith('.xlsx') || lowerName.endsWith('.xls')) {
+          standaloneExcels.push({
+            fileName: cleanFileName.replace(/\.[^/.]+$/, ""),
+            buffer: buffer
+          });
+        }
+      } catch (err) {
+        console.error(`Error processing file ${cleanFileName}:`, err);
+      }
+    }
+
+    for (const excelItem of standaloneExcels) {
+      const resolver = (imgName) => {
+        const cleanImg = imgName.trim().toLowerCase().replace(/\\/g, '/');
+        const imgBaseName = cleanImg.split('/').pop();
+        return standaloneImageMap[cleanImg] || standaloneImageMap[imgBaseName] || null;
+      };
+
+      const cards = parseExcelBuffer(excelItem.buffer, excelItem.fileName, resolver);
+      masterDeck.push(...cards);
+      loadedDeckCount++;
+    }
+
+    if (masterDeck.length === 0) {
+      alert('No flashcards found in the uploaded file(s).');
+      return;
+    }
+
+    updateTopicDropdown();
+    applyTopicFilter();
+
+    document.getElementById('files-text').innerText = `Decks Loaded: ${loadedDeckCount}`;
+    document.getElementById('card-container').style.display = 'block';
+    document.getElementById('controls').style.display = 'flex';
+    document.getElementById('completion-screen').style.display = 'none';
+  }
+
+  function parseExcelBuffer(arrayBuffer, defaultTopic, imageResolver) {
+    let workbook;
+    try {
+      const data = new Uint8Array(arrayBuffer);
+      workbook = XLSX.read(data, { type: 'array' });
+    } catch (e) {
+      workbook = XLSX.read(arrayBuffer, { type: 'array' });
+    }
+
+    const parsedCards = [];
+    for (const sheetName of workbook.SheetNames) {
+      const sheet = workbook.Sheets[sheetName];
+      if (!sheet) continue;
+
+      const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "", blankrows: false });
+      if (!rows || rows.length === 0) continue;
+
+      let frontColIdx = 0, backColIdx = 1, startRowIdx = 0;
+
+      if (rows.length > 0 && Array.isArray(rows[0])) {
+        const firstRow = rows[0].map(cell => String(cell).trim().toLowerCase());
+        firstRow.forEach((cellText, idx) => {
+          if (cellText.includes('front') || cellText.includes('question')) frontColIdx = idx;
+          if (cellText.includes('back') || cellText.includes('answer')) backColIdx = idx;
+        });
+        if (firstRow.some(c => c.includes('front') || c.includes('back'))) startRowIdx = 1;
+      }
+
+      for (let i = startRowIdx; i < rows.length; i++) {
+        const row = rows[i];
+        if (!row || !Array.isArray(row)) continue;
+
+        const frontVal = row[frontColIdx] !== undefined ? String(row[frontColIdx]).trim() : '';
+        const backVal = row[backColIdx] !== undefined ? String(row[backColIdx]).trim() : '';
+
+        if (frontVal || backVal) {
+          parsedCards.push({
+            topic: defaultTopic,
+            front: processContent(frontVal, imageResolver),
+            back: processContent(backVal, imageResolver)
+          });
+        }
+      }
+    }
+    return parsedCards;
+  }
+
+/* --- COMPLETE SAFE MATH & CURRENCY SANITIZER --- */
+function processContent(text, imageResolver) {
+  if (text === null || text === undefined || text === '') return '';
+  let str = String(text);
+
+  try {
+    // 1. Convert currency ($50 -> &#36;50) safely using a replacement function
+    // HTML renders &#36; visually as "$" while preventing KaTeX math collisions
+    str = str.replace(/(^|[^\\])\$(\d+[\d,.]*)/g, (match, prefix, amount) => {
+      return prefix + '&#36;' + amount;
+    });
+
+    // 2. Fix mismatched dollar delimiters ($$\text{...}$ -> $$\text{...}$$)
+    str = str.replace(/\$\$(\s*\\text\{[^}]+\}\s*)\$/g, (match, p1) => `$$${p1}$$`);
+
+    // 3. Isolate valid LaTeX math blocks ($...$ and $$...$$)
+    const mathBlocks = [];
+    str = str.replace(/(\$\$[\s\S]*?\$\$|\$[^$\n]+?\$)/g, (match) => {
+      mathBlocks.push(match);
+      return `___MATH_BLOCK_${mathBlocks.length - 1}___`;
+    });
+
+    // 4. PROCESS PLAIN TEXT (Outside Math Blocks)
+    // Auto-wrap scientific notation (e.g. 6.1 \times 10^3) into LaTeX
+    str = str.replace(/(\d+(?:\.\d+)?)\s*(?:\\times|×)\s*10\^(-?\d+)/g, (match, num, exp) => {
+      return `$${num} \\times 10^{${exp}}$`;
+    });
+
+    // Convert un-delimited LaTeX operators into clean unicode symbols
+    str = str.replace(/\\times\s*/g, '× ');
+    str = str.replace(/\\div\s*/g, '÷ ');
+
+    // 5. RESTORE MATH BLOCKS & SANITIZE INSIDE THEM
+    str = str.replace(/___MATH_BLOCK_(\d+)___/g, (_, index) => {
+      let match = mathBlocks[index];
+      if (!match) return '';
+      let isDouble = match.startsWith('$$');
+      let content = isDouble ? match.slice(2, -2) : match.slice(1, -1);
+
+      // Escape raw % signs inside math mode ($100% -> $100\%$)
+      content = content.replace(/(^|[^\\])%/g, '$1\\%');
+
+      return isDouble ? `$$${content}$$` : `$${content}$`;
+    });
+
+    // 6. Convert line breaks and handle image paths
+    str = str.split(/\r\n|\r|\n/).join('<br>');
+    const imageRegex = /([a-zA-Z0-9_\-\s\/\.\\]+\.(png|jpe?g|gif|svg|webp))/gi;
+    return str.replace(imageRegex, (match) => {
+      const cleanName = match.trim();
+      const resolvedUrl = (typeof imageResolver === 'function') ? imageResolver(cleanName) : null;
+      return resolvedUrl ? `<br><img src="${resolvedUrl}" alt="${cleanName}"><br>` : match;
+    });
+
+  } catch (err) {
+    console.warn("Card parsing warning:", err);
+    return String(text);
+  }
+}
+
+  function shuffleArray(array) {
+    const arr = [...array];
+    for (let i = arr.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [arr[i], arr[j]] = [arr[j], arr[i]];
+    }
+    return arr;
+  }
+
+  function toggleFlip() {
+    card.style.transition = 'transform 0.4s cubic-bezier(0.4, 0, 0.2, 1)';
+    card.style.transform = '';
+    card.classList.toggle('flipped');
+  }
+
+  function renderCard() {
+    if (deck.length === 0) {
+      document.getElementById('card-container').style.display = 'none';
+      document.getElementById('controls').style.display = 'none';
+      document.getElementById('status-text').innerText = 'Cards Remaining: 0';
+      document.getElementById('completion-screen').style.display = 'block';
+      return;
+    }
+
+    document.getElementById('status-text').innerText = `Cards Remaining: ${deck.length}`;
+    card.style.transition = 'none';
+    card.style.transform = '';
+    card.classList.remove('flipped');
+
+    const currentCard = deck[0];
+    document.getElementById('front-topic').innerText = currentCard.topic;
+    document.getElementById('back-topic').innerText = currentCard.topic;
+    document.getElementById('front-content').innerHTML = currentCard.front;
+    document.getElementById('back-content').innerHTML = currentCard.back;
+
+    // Render Math with error fallback
+    if (window.renderMathInElement) {
+      try {
+        renderMathInElement(document.getElementById('card'), {
+          delimiters: [
+            {left: '$$', right: '$$', display: true},
+            {left: '$', right: '$', display: false},
+            {left: '\\(', right: '\\)', display: false},
+            {left: '\\[', right: '\\]', display: true}
+          ],
+          throwOnError: false
+        });
+      } catch (err) {
+        console.warn("KaTeX rendering warning:", err);
+      }
+    }
+  }
+
+  function handleSwipe(known) {
+    if (deck.length === 0) return;
+    const direction = known ? 600 : -600;
+    card.style.transition = 'transform 0.35s ease, opacity 0.35s ease';
+    const isFlipped = card.classList.contains('flipped');
+    const baseRotation = isFlipped ? 'rotateY(180deg)' : '';
+    card.style.transform = `translateX(${direction}px) ${baseRotation} rotate(${direction * 0.08}deg)`;
+    card.style.opacity = '0';
+
+    setTimeout(() => {
+      const processedCard = deck.shift();
+      if (!known) deck.push(processedCard);
+      
+      card.style.transition = 'none';
+      card.style.opacity = '1';
+      renderCard();
+      setTimeout(() => { 
+        card.style.transition = 'transform 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.35s ease'; 
+      }, 50);
+    }, 300);
+  }
+
+  /* --- FLIP & SWIPE GESTURES --- */
+
+  function setupTouchEvents() {
+    const container = document.getElementById('card-container');
+    let startX = 0, startY = 0, currentX = 0, currentY = 0;
+    let isDragging = false;
+    let hasMoved = false;
+    let startTime = 0;
+
+    const onStart = (x, y) => {
+      if (deck.length === 0) return;
+      isDragging = true;
+      hasMoved = false;
+      startX = x;
+      startY = y;
+      currentX = x;
+      currentY = y;
+      startTime = Date.now();
+      card.style.transition = 'none';
+    };
+
+    const onMove = (x, y) => {
+      if (!isDragging) return;
+      currentX = x;
+      currentY = y;
+      const deltaX = currentX - startX;
+      const deltaY = currentY - startY;
+
+      if (!hasMoved && (Math.abs(deltaX) > 6 || Math.abs(deltaY) > 6)) {
+        hasMoved = true;
+      }
+
+      if (hasMoved) {
+        const isFlipped = card.classList.contains('flipped');
+        const baseRotation = isFlipped ? 'rotateY(180deg)' : '';
+        card.style.transform = `translateX(${deltaX}px) ${baseRotation} rotate(${deltaX * 0.04}deg)`;
+      }
+    };
+
+    const onEnd = (e) => {
+      if (!isDragging) return;
+      isDragging = false;
+      const deltaX = currentX - startX;
+      const elapsedTime = Date.now() - startTime;
+
+      if (!hasMoved || (Math.abs(deltaX) < 12 && elapsedTime < 400)) {
+        toggleFlip();
+      } else if (deltaX > 80) {
+        handleSwipe(true);
+      } else if (deltaX < -80) {
+        handleSwipe(false);
+      } else {
+        card.style.transition = 'transform 0.3s ease';
+        card.style.transform = '';
+      }
+
+      if (e && e.cancelable && e.type && e.type.startsWith('touch')) {
+        e.preventDefault();
+      }
+    };
+
+    container.addEventListener('touchstart', (e) => {
+      if (e.touches.length === 1) onStart(e.touches[0].clientX, e.touches[0].clientY);
+    }, { passive: true });
+
+    container.addEventListener('touchmove', (e) => {
+      if (e.touches.length === 1) onMove(e.touches[0].clientX, e.touches[0].clientY);
+    }, { passive: true });
+
+    container.addEventListener('touchend', onEnd);
+
+    container.addEventListener('mousedown', (e) => {
+      if (e.button === 0) onStart(e.clientX, e.clientY);
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (isDragging) onMove(e.clientX, e.clientY);
+    });
+
+    window.addEventListener('mouseup', (e) => {
+      if (isDragging) onEnd(e);
+    });
+  }
+
+  /* --- CANVAS WITH SINGLE-TOUCH ENFORCEMENT --- */
+
+  function initCanvas() {
+    const canvas = document.getElementById('drawingCanvas');
+    drawingCtx = canvas.getContext('2d');
+
+    canvas.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
+    canvas.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
+
+    const resize = () => {
+      const container = canvas.parentElement;
+      const dpr = window.devicePixelRatio || 1;
+      
+      let tempCanvas = null;
+      if (canvas.width > 0 && canvas.height > 0) {
+        tempCanvas = document.createElement('canvas');
+        tempCanvas.width = canvas.width;
+        tempCanvas.height = canvas.height;
+        tempCanvas.getContext('2d').drawImage(canvas, 0, 0);
+      }
+
+      const rect = container.getBoundingClientRect();
+      canvas.width = rect.width * dpr;
+      canvas.height = rect.height * dpr;
+
+      drawingCtx.scale(dpr, dpr);
+      drawingCtx.lineCap = 'round';
+      drawingCtx.lineJoin = 'round';
+
+      if (tempCanvas) {
+        drawingCtx.drawImage(tempCanvas, 0, 0, tempCanvas.width, tempCanvas.height, 0, 0, rect.width, rect.height);
+      }
+    };
+
+    window.addEventListener('resize', resize);
+    setTimeout(resize, 100);
+
+    canvas.addEventListener('pointerdown', (e) => {
+      if (!e.isPrimary) return;
+      isDrawing = true;
+      try { canvas.setPointerCapture(e.pointerId); } catch(err) {}
+      const rect = canvas.getBoundingClientRect();
+      lastPX = e.clientX - rect.left;
+      lastPY = e.clientY - rect.top;
+    });
+
+    canvas.addEventListener('pointermove', (e) => {
+      if (!isDrawing || !e.isPrimary) return;
+      const rect = canvas.getBoundingClientRect();
+      const curX = e.clientX - rect.left;
+      const curY = e.clientY - rect.top;
+
+      drawingCtx.beginPath();
+      drawingCtx.moveTo(lastPX, lastPY);
+      drawingCtx.lineTo(curX, curY);
+
+      if (currentTool === 'eraser') {
+        drawingCtx.globalCompositeOperation = 'destination-out';
+        drawingCtx.lineWidth = 26;
+      } else {
+        drawingCtx.globalCompositeOperation = 'source-over';
+        drawingCtx.strokeStyle = '#2563eb';
+        const pressure = (e.pressure && e.pressure > 0) ? e.pressure : 0.5;
+        drawingCtx.lineWidth = Math.max(2, pressure * 7);
+      }
+
+      drawingCtx.stroke();
+      lastPX = curX;
+      lastPY = curY;
+    });
+
+    const stopDrawing = (e) => {
+      if (isDrawing && e.isPrimary) {
+        isDrawing = false;
+        try { canvas.releasePointerCapture(e.pointerId); } catch(err) {}
+      }
+    };
+
+    canvas.addEventListener('pointerup', stopDrawing);
+    canvas.addEventListener('pointercancel', stopDrawing);
+    canvas.addEventListener('pointerleave', stopDrawing);
+  }
+
+  function setTool(tool) {
+    currentTool = tool;
+    document.getElementById('btn-pen').classList.toggle('active', tool === 'pen');
+    document.getElementById('btn-eraser').classList.toggle('active', tool === 'eraser');
+  }
+
+  function clearCanvas() {
+    const canvas = document.getElementById('drawingCanvas');
+    const dpr = window.devicePixelRatio || 1;
+    drawingCtx.clearRect(0, 0, canvas.width / dpr, canvas.height / dpr);
+  }
+</script>
+
+</body>
+</html>
